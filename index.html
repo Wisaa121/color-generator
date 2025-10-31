@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -214,3 +215,221 @@ populateTiers();
 </script>
 </body>
 </html>
+=======
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Color Generator & Tier List</title>
+<style>
+:root{--bg:#0f1113;--card:#121417;--muted:#9aa3b2;--accent:#1f6feb;--panel:#101214;--gap:12px;--round:10px;}
+html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+body{background:linear-gradient(180deg,#07080a 0%,#0f1113 100%);color:#eaf0ff;padding:18px;box-sizing:border-box;}
+.app{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:18px;}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+h1{font-size:18px;margin:0}
+.controls{display:flex;gap:8px;align-items:center}
+button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:inherit;padding:8px 12px;border-radius:8px;font-weight:600;cursor:pointer}
+.color-card{background:var(--card);border-radius:var(--round);padding:14px;box-shadow:0 6px 20px rgba(0,0,0,0.6);}
+.swatch{height:200px;border-radius:10px;display:flex;align-items:flex-start;justify-content:flex-end;padding:10px;box-shadow:inset 0 -20px 40px rgba(0,0,0,0.25);}
+.meta{margin-top:12px}
+.hex{font-weight:800;font-size:18px}
+.name{color:var(--muted);margin-top:6px}
+.stars-row{display:flex;gap:6px;align-items:center;margin-top:10px}
+.star{font-size:26px;cursor:pointer;user-select:none}
+.small{font-size:13px;color:var(--muted)}
+.tier-wrap{display:flex;gap:10px;flex-direction:column}
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tier{background:var(--panel);padding:10px;border-radius:10px;min-height:120px}
+.tier h3{margin:0 0 8px 0;font-size:14px}
+.card{border-radius:8px;padding:6px 8px;color:#fff;display:inline-block;margin:6px;cursor:grab;box-shadow:0 6px 18px rgba(0,0,0,0.6);}
+footer{margin-top:18px;color:var(--muted);font-size:13px;text-align:center}
+@media (max-width:900px){.tiers{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<h1>Live Color Generator & Tier List</h1>
+<div class="controls">
+<div class="small">Lang</div>
+<select id="langSelect" aria-label="language">
+<option value="EN">EN</option>
+<option value="DE">DE</option>
+</select>
+<button id="clearAll">Clear All</button>
+<button id="exportBtn">Export JSON</button>
+<button id="importBtn">Import JSON</button>
+<input id="importInput" type="file" accept=".json" style="display:none" />
+</div>
+</header>
+
+<div class="color-card">
+<div id="swatch" class="swatch" style="background:#ffffff"></div>
+<div class="meta">
+<div class="hex" id="hexLabel">#FFFFFF</div>
+<div class="name" id="nameLabel">Neutral Bright White</div>
+<div class="stars-row">
+<div style="flex:1">
+<div class="small">Rate how much you like it:</div>
+<div id="stars1"></div>
+</div>
+<div style="flex:1">
+<div class="small">Rate how combinable it is:</div>
+<div id="stars2"></div>
+</div>
+</div>
+<div style="margin-top:12px">
+<button id="nextBtn">Next Color</button>
+<div class="small" style="margin-top:6px">Keyboard: Space/Enter = rate + next</div>
+</div>
+</div>
+</div>
+
+<div id="tierArea" class="tier-wrap">
+<strong>Live Tier List (auto-updates)</strong>
+<div id="tiersContainer" class="tiers"></div>
+</div>
+
+<footer>Local-first. Works on PC and mobile. Close & reopen to continue.</footer>
+</div>
+
+<script>
+/* ----------------------------
+   Data & Helpers
+-----------------------------*/
+const saturationAdjectives = [
+[0.0,0.2,["Muted","Soft","Subtle","Faded","Pale","Whispered","Tender","Hazy","Gentle","Washed","Dull","Low-key","Understated","Faint","Calm","Mellow","Feeble","Delicate","Dim","Neutral"]],
+[0.2,0.5,["Gentle","Calm","Delicate","Moderate","Kindly","Soothing","Mellow","Balanced","Even","Lighthearted","Fair","Measured","Mild","Temperate","Softened","Harmonious","Pleasant","Reasonable","Smooth","Neutral"]],
+[0.5,0.8,["Bright","Vivid","Radiant","Shining","Clear","Sparkling","Gleaming","Colorful","Glowing","Strong","Dazzling","Bold","Cheerful","Flamboyant","Lively","Sunny","Vibrant","Fresh","Rich","Eye-catching"]],
+[0.8,1.0,["Intense","Bold","Vibrant","Striking","Dramatic","Powerful","Brilliant","Flaming","Electric","Extreme","Flawless","Dynamic","Forceful","Fierce","Glorious","Energetic","Radiating","Explosive","Blazing","Commanding"]]
+];
+const lightnessAdjectives = [
+[0.0,0.2,["Deep","Shadowed","Dark","Midnight","Dim","Gloomy","Rich","Dusky","Obscure","Twilight","Mysterious","Abyssal","Dense","Somber","Opaque","Heavy","Earthy","Moody","Brooding","Foreboding"]],
+[0.2,0.5,["Dusky","Pale","Dim","Frosted","Shaded","Soft","Muted","Twilight","Gentle","Subdued","Faded","Calm","Hushed","Clouded","Smoky","Misty","Hazy","Ashen","Dull","Feathered"]],
+[0.5,0.8,["Light","Soft","Glowing","Luminous","Radiant","Brightened","Cheerful","Sunny","Clear","Fair","Airy","Delicate","Transparent","Shimmering","Glossy","Silky","Mellow","Polished","Gentle"]],
+[0.8,1.0,["Luminous","Glittering","Radiant","Blinding","Shining","Dazzling","Gleaming","Brilliant","Flawless","Sparkling","Flaming","Incandescent","Effulgent","Lucent","Sunny","Bright","Scintillating","Illuminated","Glorious","Vivid"]]
+];
+const fancyColorMapEn = [
+[0,15,"Crimson"], [15,35,"Ruby"], [35,60,"Amber"], [60,80,"Lemon"],
+[80,110,"Mint"], [110,150,"Emerald"], [150,190,"Seafoam"], [190,210,"Turquoise"],
+[210,230,"Cobalt"], [230,250,"Royal"], [250,270,"Indigo"],
+[270,290,"Violet"], [290,310,"Lilac"], [310,330,"Magenta"], [330,345,"Pink"], [345,360,"Crimson"]
+];
+const baseColorMapEn = [
+[0,30,"Red"], [30,60,"Orange"], [60,90,"Yellow"], [90,150,"Green"],
+[150,210,"Cyan"], [210,270,"Blue"], [270,330,"Purple"], [330,360,"Red"]
+];
+
+let currentColor=null;
+let ratings = JSON.parse(localStorage.getItem("ratings")||"[]");
+let currentLanguage="EN";
+const tiers=["S","A","B","C","Shit"];
+const tierThresholds={S:[8,Infinity],A:[5,8],B:[3,5],C:[2,3],Shit:[-Infinity,2]};
+
+/* ----------------------------
+   DOM elements
+-----------------------------*/
+const swatchEl=document.getElementById("swatch");
+const hexLabelEl=document.getElementById("hexLabel");
+const nameLabelEl=document.getElementById("nameLabel");
+const stars1El=document.getElementById("stars1");
+const stars2El=document.getElementById("stars2");
+const nextBtn=document.getElementById("nextBtn");
+const langSelect=document.getElementById("langSelect");
+const tiersContainer=document.getElementById("tiersContainer");
+const clearAllBtn=document.getElementById("clearAll");
+const exportBtn=document.getElementById("exportBtn");
+const importBtn=document.getElementById("importBtn");
+const importInput=document.getElementById("importInput");
+
+/* ----------------------------
+   Helpers
+-----------------------------*/
+function randInt(min,max){return Math.floor(Math.random()*(max-min))+min;}
+function rgbToHsv(r,g,b){let max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min,v=max,s=max===0?0:d/max,h=0;if(max!==min){switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;case b:h=(r-g)/d+4;break;}h/=6;}return [h,s,v];}
+function generateHex(){return `#${randInt(0,256).toString(16).padStart(2,"0")}${randInt(0,256).toString(16).padStart(2,"0")}${randInt(0,256).toString(16).padStart(2,"0")}`;}
+function getBaseColor(h,s,v){if(s<0.2&&v>0.8)return "White";if(s<0.2&&v<0.2)return "Black";if(s<0.2)return "Gray";for(let [start,end,color] of baseColorMapEn)if(h*360>=start&&h*360<end)return color;return"Unknown";}
+function getFancyColor(h,base){for(let [start,end,color] of fancyColorMapEn)if(h*360>=start&&h*360<end&&color.toLowerCase()!==base.toLowerCase())return color;return base;}
+function getSaturationAdj(s){for(let [start,end,opts] of saturationAdjectives)if(s>=start&&s<end)return opts[randInt(0,opts.length)];return"Neutral";}
+function getLightnessAdj(v){for(let [start,end,opts] of lightnessAdjectives)if(v>=start&&v<end)return opts[randInt(0,opts.length)];return"Neutral";}
+function colorName(hex){let r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;let [h,s,v]=rgbToHsv(r,g,b);let base=getBaseColor(h,s,v),fancy=getFancyColor(h,base),sat=getSaturationAdj(s),light=getLightnessAdj(v);return `${sat} ${light} ${fancy} ${base}`;}
+async function translateColorName(name,target){if(target==="EN")return name;try{let res=await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${target}&dt=t&q=${encodeURIComponent(name)}`);let data=await res.json();return data[0][0][0]||name}catch(e){return name;}}
+function saveRating(r1,r2){let avg=(r1+r2)/2;ratings.push({hex:currentColor.hex,name_en:currentColor.name_en,rating:avg});localStorage.setItem("ratings",JSON.stringify(ratings));populateTiers();}
+function clearAll(){ratings=[];localStorage.removeItem("ratings");populateTiers();}
+function exportJSON(){let blob=new Blob([JSON.stringify(ratings)],{type:"application/json"});let url=URL.createObjectURL(blob);let a=document.createElement("a");a.href=url;a.download="colors.json";a.click();}
+function importJSON(file){let reader=new FileReader();reader.onload=e=>{try{ratings=JSON.parse(e.target.result);localStorage.setItem("ratings",JSON.stringify(ratings));populateTiers();}catch(err){alert("Invalid JSON")}};reader.readAsText(file);}
+function getTier(r){for(let t of tiers){let [lo,hi]=tierThresholds[t];if(r>=lo&&r<hi || (t==="S" && r>=lo)) return t;} return "Shit";}
+
+/* ----------------------------
+   Stars
+-----------------------------*/
+let stars1=[],stars2=[],stars1Rating=0,stars2Rating=0;
+function createStars(container,idx){let arr=[];for(let i=0;i<10;i++){let s=document.createElement("span");s.className="star";s.textContent="☆";s.addEventListener("click",()=>{if(idx===1){stars1Rating=i+1;}else{stars2Rating=i+1;}updateStars();});container.appendChild(s);arr.push(s);}return arr;}
+function updateStars(){stars1.forEach((s,i)=>{s.textContent=(i<stars1Rating?"★":"☆")});stars2.forEach((s,i)=>{s.textContent=(i<stars2Rating?"★":"☆")});}
+
+/* ----------------------------
+   Color generator
+-----------------------------*/
+async function showNextColor(){let hex=generateHex();let name=colorName(hex);currentColor={hex,name_en:name};swatchEl.style.background=hex;hexLabelEl.textContent=hex;nameLabelEl.textContent=await translateColorName(name,currentLanguage);stars1El.innerHTML="";stars2El.innerHTML="";stars1=createStars(stars1El,1);stars2=createStars(stars2El,2);stars1Rating=0;stars2Rating=0;updateStars();}
+
+/* ----------------------------
+   Tier population & drag-drop
+-----------------------------*/
+function populateTiers(){
+    tiersContainer.innerHTML="";
+    let tierElems={};
+    tiers.forEach(t=>{
+        let div=document.createElement("div");
+        div.className="tier";
+        let h=document.createElement("h3");h.textContent=t;div.appendChild(h);
+        tiersContainer.appendChild(div);
+        tierElems[t]=div;
+        div.addEventListener("dragover",e=>e.preventDefault());
+        div.addEventListener("drop",e=>{
+            e.preventDefault();
+            let hex=e.dataTransfer.getData("text");
+            let item=ratings.find(r=>r.hex===hex);
+            if(!item)return;
+
+            // Update rating based on target tier
+            let [lo,hi]=tierThresholds[t];
+            if(t==="S") item.rating=9;
+            else item.rating=(lo+hi)/2;
+
+            populateTiers();
+        });
+    });
+    ratings.forEach(r=>{
+        let tier=getTier(r.rating);
+        let div=document.createElement("div");
+        div.className="card";
+        div.textContent=r.hex;
+        div.style.background=r.hex;
+        div.setAttribute("draggable","true");
+        div.addEventListener("dragstart",e=>{e.dataTransfer.setData("text",r.hex)});
+        tierElems[tier].appendChild(div);
+    });
+}
+
+/* ----------------------------
+   Event listeners
+-----------------------------*/
+nextBtn.addEventListener("click",()=>{saveRating(stars1Rating,stars2Rating);showNextColor();});
+document.addEventListener("keydown",e=>{if(e.code==="Space"||e.code==="Enter"){saveRating(stars1Rating,stars2Rating);showNextColor();}});
+langSelect.addEventListener("change", async ()=>{currentLanguage=langSelect.value;if(currentColor)nameLabelEl.textContent=await translateColorName(currentColor.name_en,currentLanguage);});
+clearAllBtn.addEventListener("click",clearAll);
+exportBtn.addEventListener("click",exportJSON);
+importBtn.addEventListener("click",()=>importInput.click());
+importInput.addEventListener("change",e=>importJSON(e.target.files[0]));
+
+/* ----------------------------
+   Initial load
+-----------------------------*/
+showNextColor();
+populateTiers();
+</script>
+</body>
+</html>
+>>>>>>> ed2ae6b42c9982dd6e86d765c2c299fab4fccd49
