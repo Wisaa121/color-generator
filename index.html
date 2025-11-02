@@ -209,7 +209,11 @@ function populateTiers(){
         localStorage.setItem("ratings",JSON.stringify(ratings));
         populateTiers(); 
         hideTooltip();
+        trash.style.background="var(--panel)";
     });
+
+    // Keep red color while hovering
+    trash.addEventListener("dragover", ()=>trash.style.background="#b33");
 
     // Populate cards
     ratings.forEach(async r=>{
