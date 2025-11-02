@@ -67,6 +67,9 @@ const tooltip = document.getElementById("tooltip");
 
 let stars1 = [], stars2 = [], stars1Rating = 0, stars2Rating = 0;
 
+// Global drag state to support desktop and be used by document dragover handler
+let draggingHex = null;
+
 // ---------------- Helpers ----------------
 function randInt(min,max){return Math.floor(Math.random()*(max-min))+min;}
 function generateHex(){return `#${randInt(0,256).toString(16).padStart(2,"0")}${randInt(0,256).toString(16).padStart(2,"0")}${randInt(0,256).toString(16).padStart(2,"0")}`;}
@@ -168,6 +171,7 @@ function populateTiers(){
 
     const tierMap = {S:9, A:7, B:5, C:3};
 
+    // Create tier columns S A B C
     ["S","A","B","C"].forEach(t=>{
         let div=document.createElement("div"); 
         div.className="tier";
@@ -178,6 +182,7 @@ function populateTiers(){
         tiersContainer.appendChild(div);
         tierElems[t]=div;
 
+        // Allow mouse dragover/drop
         div.addEventListener("dragover", e=>{e.preventDefault();});
         div.addEventListener("drop", e=>{
             e.preventDefault();
@@ -189,19 +194,27 @@ function populateTiers(){
             populateTiers();
             hideTooltip();
         });
+
+        // For older browsers/fallback use dragenter/leave to change appearance
+        div.addEventListener("dragenter", ()=>{ if(div.querySelector("h3").textContent==="Trash") div.style.background="#b33"; else div.style.background="#222"; });
+        div.addEventListener("dragleave", ()=>{ div.style.background="var(--panel)"; });
     });
 
-    // Trash can
+    // Trash can column
     let trash=document.createElement("div"); 
     trash.className="tier"; 
+    // give dataset so it can be detected easily
+    trash.dataset.tier = "Trash";
     let th=document.createElement("h3"); 
     th.textContent="Trash"; 
     trash.appendChild(th); 
     tiersContainer.appendChild(trash);
 
+    // Mouse events for trash
     trash.addEventListener("dragover", e=>e.preventDefault());
-    trash.addEventListener("dragenter", ()=>trash.style.background="#b33");
-    trash.addEventListener("dragleave", ()=>trash.style.background="var(--panel)");
+    // dragenter/leave as fallback
+    trash.addEventListener("dragenter", ()=>{ trash.style.background="#b33"; });
+    trash.addEventListener("dragleave", ()=>{ trash.style.background="var(--panel)"; });
     trash.addEventListener("drop", e=>{
         e.preventDefault(); 
         let hex=e.dataTransfer.getData("text");
@@ -212,10 +225,46 @@ function populateTiers(){
         trash.style.background="var(--panel)";
     });
 
-    // Keep red color while hovering
-    trash.addEventListener("dragover", ()=>trash.style.background="#b33");
+    // Touch drag logic helper: get tier element under touch coords
+    function getTouchTarget(x, y){
+        let el = document.elementFromPoint(x, y);
+        return el ? el.closest(".tier") : null;
+    }
 
-    // Populate cards
+    // Add a document-wide dragover handler (desktop) so we can highlight the tier under the pointer reliably.
+    // This helps when native dragenter/dragleave are flaky because of nested elements.
+    // We'll attach this handler once here and rely on draggingHex to know when a drag is active.
+    // Clean-up of visuals happens when draggingHex is cleared.
+    function highlightTierUnderPoint(x, y){
+        // reset backgrounds
+        document.querySelectorAll(".tier").forEach(t=>t.style.background="var(--panel)");
+        let el = document.elementFromPoint(x, y);
+        let targetTier = el ? el.closest(".tier") : null;
+        if(targetTier){
+            let label = targetTier.querySelector("h3") ? targetTier.querySelector("h3").textContent : "";
+            if(label==="Trash") targetTier.style.background="#b33";
+            else targetTier.style.background="#222";
+        }
+    }
+
+    // Attach document dragover to detect pointer while dragging (desktop)
+    // Make sure we don't add multiple identical listeners by checking a flag on document
+    if(!document._hasTierDragHandler){
+        document.addEventListener("dragover", e=>{
+            if(!draggingHex) return; // not currently dragging from our app
+            highlightTierUnderPoint(e.clientX, e.clientY);
+            e.preventDefault();
+        });
+        // cleanup on dragend (desktop)
+        document.addEventListener("dragend", e=>{
+            // clear highlight and dragging state
+            draggingHex = null;
+            document.querySelectorAll(".tier").forEach(t=>t.style.background="var(--panel)");
+        });
+        document._hasTierDragHandler = true;
+    }
+
+    // Populate cards (color boxes)
     ratings.forEach(async r=>{
         let tier=getTierFromRating(r.rating);
         if(tier==="Trash") return;
@@ -225,31 +274,130 @@ function populateTiers(){
         div.style.background=r.hex; 
         div.setAttribute("draggable","true");
 
-        // Drag start
-        div.addEventListener("dragstart", e=>{e.dataTransfer.setData("text",r.hex);});
-
-        // Touch support
-        div.addEventListener("touchstart", e=>{e.target.dataset.touching = true;});
-        div.addEventListener("touchend", e=>{
-            let touchTarget = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-            if(touchTarget.closest(".tier")){
-                let t = touchTarget.closest(".tier").dataset.tier;
-                if(t && tierMap[t]) r.rating = tierMap[t];
-            }
-            if(touchTarget.closest("h3") && touchTarget.closest(".tier").textContent==="Trash") {
-                ratings = ratings.filter(x=>x.hex!==r.hex);
-            }
-            localStorage.setItem("ratings",JSON.stringify(ratings));
-            populateTiers();
-            delete e.target.dataset.touching;
+        // Drag start (mouse): set dataTransfer and mark draggingHex so document dragover handler works.
+        div.addEventListener("dragstart", (e)=>{
+            try{
+                e.dataTransfer.setData("text",r.hex);
+            }catch(err){}
+            draggingHex = r.hex;
+            // small visual cue
+            document.querySelectorAll(".tier").forEach(t=>t.style.transition="background .08s");
         });
 
-        div.addEventListener("mouseenter", async ()=>{
+        // dragend (mouse) cleanup
+        div.addEventListener("dragend", ()=>{
+            draggingHex = null;
+            document.querySelectorAll(".tier").forEach(t=>t.style.background="var(--panel)");
+        });
+
+        // Touch support - we will implement manual dragging for touch (hit-testing tiers)
+        // Touch hold for tooltip (mobile)
+        let holdTimer;
+        div.addEventListener("touchstart", async (e)=>{
+            // Prevent default so touch dragging doesn't cause scrolling on some devices while interacting
+            // but allow quick taps to still be possible; keep minimal interference
+            // We still call preventDefault to help with consistent touch behavior for hold and drag
+            e.preventDefault && e.preventDefault();
+            let touch = e.touches[0];
+            // start hold timer for tooltip (500ms)
+            holdTimer = setTimeout(async ()=>{
+                let tname = await translateColorName(r.name_en);
+                let tx = touch.clientX;
+                let ty = touch.clientY - 120; // show above finger
+                if(ty < 0) ty = touch.clientY + 60;
+                showTooltip(`<strong>${tname}</strong> Rating: ${r.rating}`, tx, ty);
+            }, 500);
+        });
+        div.addEventListener("touchmove", e=>{
+            // moving cancels hold tooltip
+            clearTimeout(holdTimer);
+            hideTooltip();
+        });
+        div.addEventListener("touchend", e=>{
+            clearTimeout(holdTimer);
+            hideTooltip();
+        });
+
+        // Touch-drag behaviour: when touch starts on a card, mark it as the active touch-drag item.
+        // Then on touchmove, highlight the tier under the finger. On touchend, drop the card accordingly.
+        let touchActive = false;
+        let startTouchId = null;
+
+        div.addEventListener("touchstart", (e)=>{
+            // Use first touch
+            const t = e.changedTouches[0];
+            touchActive = true;
+            startTouchId = t.identifier;
+            div.classList.add("dragging");
+            // set draggingHex so other handlers (if any) know we're dragging
+            draggingHex = r.hex;
+        });
+
+        div.addEventListener("touchmove", (e)=>{
+            if(!touchActive) return;
+            // find the touch with the same identifier
+            let t = null;
+            for(let i=0;i<e.touches.length;i++){
+                if(e.touches[i].identifier === startTouchId){ t = e.touches[i]; break; }
+            }
+            if(!t) return;
+            let touchX = t.clientX;
+            let touchY = t.clientY;
+            // reset styles on all tiers
+            document.querySelectorAll(".tier").forEach(ti=>ti.style.background="var(--panel)");
+            let targetTier = getTouchTarget(touchX, touchY);
+            if(targetTier){
+                let label = targetTier.querySelector("h3") ? targetTier.querySelector("h3").textContent : "";
+                if(label==="Trash"){
+                    targetTier.style.background="#b33";
+                } else {
+                    targetTier.style.background="#222";
+                }
+            }
+            // prevent page scroll while dragging (improves UX)
+            e.preventDefault && e.preventDefault();
+        }, {passive:false});
+
+        div.addEventListener("touchend", (e)=>{
+            if(!touchActive) return;
+            // find changed touch that ended
+            let t = null;
+            for(let i=0;i<e.changedTouches.length;i++){
+                if(e.changedTouches[i].identifier === startTouchId){ t = e.changedTouches[i]; break; }
+            }
+            touchActive = false;
+            startTouchId = null;
+            div.classList.remove("dragging");
+            hideTooltip();
+            // Reset draggingHex
+            draggingHex = null;
+            // Determine drop target
+            let touch = t || e.changedTouches[0];
+            let targetTier = getTouchTarget(touch.clientX, touch.clientY);
+            document.querySelectorAll(".tier").forEach(ti=>ti.style.background="var(--panel)");
+            if(targetTier){
+                let tName = targetTier.querySelector("h3") ? targetTier.querySelector("h3").textContent : "";
+                if(tName==="Trash"){
+                    ratings = ratings.filter(x=>x.hex!==r.hex);
+                } else if(tierMap[tName]) {
+                    r.rating = tierMap[tName];
+                }
+                localStorage.setItem("ratings",JSON.stringify(ratings));
+                populateTiers();
+            }
+        });
+
+        // Mouse hover tooltip (desktop)
+        div.addEventListener("mouseenter", async ()=>{ 
             let tname = await translateColorName(r.name_en);
             showTooltip(`<strong>${tname}</strong> Rating: ${r.rating}`, div.getBoundingClientRect().x, div.getBoundingClientRect().y);
         });
         div.addEventListener("mouseleave", hideTooltip);
-        tierElems[tier].appendChild(div);
+
+        // Append to appropriate tier column (existing tierElems[t] exists)
+        // if tier missing, append to S as fallback
+        if(tierElems[tier]) tierElems[tier].appendChild(div);
+        else tierElems["S"].appendChild(div);
     });
 }
 
